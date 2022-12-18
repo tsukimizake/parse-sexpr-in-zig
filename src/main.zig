@@ -15,7 +15,7 @@ const ParseState = struct {
 };
 
 fn initState(str: []const u8) *ParseState {
-    return &.{ .currentIndex = 0, .currentChar = str[0] };
+    return &ParseState{ .currentIndex = 0, .currentChar = str[0] };
 }
 
 fn hasNextChar(str: []const u8, state: *ParseState) bool {
@@ -35,6 +35,7 @@ fn skipWS(str: []const u8, state: *ParseState) void {
     while (hasNextChar(str, state) and (state.currentChar == ' ' or state.currentChar == '\n')) {
         nextChar(str, state);
     }
+    std.log.debug("skipWS end {}", .{state.currentIndex});
 }
 
 fn isInt(state: *ParseState) bool {
@@ -61,38 +62,35 @@ const Buffer = struct {
     capacity: usize,
 };
 
+const Error = error{parseError};
+
 fn parseExpression(str: []const u8, state: *ParseState) anyerror!Expr {
     skipWS(str, state);
     if (isInt(state)) {
         const res = parseInt(str, state);
         return Expr{ .int = res };
-    } else {
+    } else if (state.currentChar == '(') {
+        nextChar(str, state);
         var buf: Buffer = .{ .items = try allocator.alloc(Expr, 10), .size = 0, .capacity = 10 };
         defer allocator.free(buf.items);
 
-        debug("bufsize {}", .{buf.size});
         while (isNotEnded(str, state) and state.currentChar != ')') {
             const item = try parseExpression(str, state);
             skipWS(str, state);
 
-            debug("bufsize {}", .{buf.size});
-            // bufにparseStateが入っている？？？
             if (buf.size >= buf.capacity) {
                 const newCapacity = buf.capacity * 2;
                 buf = .{ .items = try allocator.realloc(buf.items, newCapacity), .size = buf.size, .capacity = newCapacity };
             }
 
-            debug("bufsize {}", .{buf.size});
             buf.items[buf.size] = item;
             buf.size += 1;
-            if (!hasNextChar(str, state)) {
-                break;
-            }
-            nextChar(str, state);
         }
 
         std.log.debug("parseExpr end {}", .{state.currentIndex});
-        return Expr{ .list = try allocator.dupe(Expr, buf.items) };
+        return Expr{ .list = try allocator.dupe(Expr, buf.items[0..buf.size]) };
+    } else {
+        return Error.parseError;
     }
 }
 
@@ -104,8 +102,30 @@ fn parse(str: []const u8) anyerror!Expr {
 
 pub fn main() anyerror!void {
     // const input = std.os.argv[1];
-    const input = "(123)";
+    const input = "(1 2 3)";
     std.log.info("{}", .{try parse(input)});
+}
+fn exprEqual(lhs: Expr, rhs: Expr) bool {
+    return switch (lhs) {
+        Tag.int => switch (rhs) {
+            Tag.int => lhs.int == rhs.int,
+            Tag.list => false,
+        },
+        Tag.list => switch (rhs) {
+            Tag.list => {
+                if (lhs.list.len != rhs.list.len) {
+                    return false;
+                } else {
+                    var res: bool = true;
+                    for (lhs.list) |v, i| {
+                        res = res and exprEqual(v, rhs.list[i]);
+                    }
+                    return res;
+                }
+            },
+            Tag.int => false,
+        },
+    };
 }
 
 test "int test" {
@@ -113,5 +133,10 @@ test "int test" {
 }
 
 test "expr test" {
-    try std.testing.expectEqual(Expr{ .list = &.{Expr{ .int = 123 }} }, try parse("(123)"));
+    try std.testing.expect(exprEqual(.{ .list = &.{.{ .int = 123 }} }, try parse("(123)")));
+    try std.testing.expect(exprEqual(.{ .int = 123 }, try parse("123")));
+    try std.testing.expect(exprEqual(Expr{ .list = &.{Expr{ .int = 123 }} }, try parse("(123)")));
+    try std.testing.expect(exprEqual(Expr{ .list = &.{ .{ .int = 1 }, .{ .int = 2 }, .{ .int = 3 } } }, try parse("(1 2 3)")));
+    try std.testing.expect(exprEqual(Expr{ .list = &.{ Expr{ .int = 1 }, Expr{ .list = &.{ .{ .int = 2 }, Expr{ .list = &.{Expr{ .int = 3 }} } } } } }, try parse("(1(2(3)))")));
+    try std.testing.expect(exprEqual(Expr{ .list = &.{Expr{ .list = &.{ .{ .int = 12 }, .{ .int = 3 } } }} }, try parse("( (12 3) )")));
 }
