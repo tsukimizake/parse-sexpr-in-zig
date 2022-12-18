@@ -35,7 +35,7 @@ fn skipWS(str: []const u8, state: *ParseState) void {
     while (hasNextChar(str, state) and (state.currentChar == ' ' or state.currentChar == '\n')) {
         nextChar(str, state);
     }
-    std.log.debug("skipWS end {}", .{state.currentIndex});
+    debug("skipWS end", state.currentIndex);
 }
 
 fn isInt(state: *ParseState) bool {
@@ -52,7 +52,7 @@ fn parseInt(str: []const u8, state: *ParseState) i32 {
         }
         nextChar(str, state);
     }
-    std.log.debug("parseint end {}", .{state.currentIndex});
+    debug("parseint end", state.currentIndex);
     return res;
 }
 
@@ -87,24 +87,36 @@ fn parseExpression(str: []const u8, state: *ParseState) anyerror!Expr {
             buf.size += 1;
         }
 
-        std.log.debug("parseExpr end {}", .{state.currentIndex});
+        debug("parseExpr end", state.currentIndex);
         return Expr{ .list = try allocator.dupe(Expr, buf.items[0..buf.size]) };
     } else {
         return Error.parseError;
     }
 }
 
-const debug = std.log.debug;
+fn debug(str: []const u8, x: anytype) void {
+    std.log.debug("{s}: {any}", .{ str, x });
+}
 
 fn parse(str: []const u8) anyerror!Expr {
     return try parseExpression(str, initState(str));
 }
 
+fn hoge(_: []u8) void {}
+
 pub fn main() anyerror!void {
-    // const input = std.os.argv[1];
-    const input = "(1 2 3)";
-    std.log.info("{}", .{try parse(input)});
+    const input = std.os.argv[1];
+    std.log.info("{}", .{try parse(input[0..strlen(input)])});
 }
+
+fn strlen(str: [*:0]const u8) usize {
+    var count: usize = 0;
+    while (str[count] != 0) {
+        count += 1;
+    }
+    return count;
+}
+
 fn exprEqual(lhs: Expr, rhs: Expr) bool {
     return switch (lhs) {
         Tag.int => switch (rhs) {
