@@ -205,4 +205,5 @@ test "int expr test" {
 
 test "math expr test" {
     try expectExprEqual(.{ .list = &.{ .{ .op = Op.plus }, .{ .int = 1 }, .{ .int = 2 }, .{ .int = 3 } } }, try parse("(+ 1 2 3)"));
+    try expectExprEqual(.{ .list = &.{ .{ .op = Op.plus }, .{ .int = 1 }, .{ .list = &.{ .{ .op = Op.minus }, .{ .int = 3 }, .{ .int = 1 } } } } }, try parse("  (  +  1  (  -   3  1 ) )  "));
 }
