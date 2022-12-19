@@ -2,12 +2,16 @@ const std = @import("std");
 
 const allocator = std.heap.c_allocator;
 
-const Tag = enum { list, int };
+const Tag = enum { list, int, op };
+const Op = enum { plus, minus };
 const Expr =
     union(Tag) {
     list: []const Expr,
     int: i32,
+    op: Op,
 };
+
+const Error = error{parseError};
 
 const ParseState = struct {
     currentIndex: usize,
@@ -41,6 +45,30 @@ fn skipWS(str: []const u8, state: *ParseState) void {
     debug("skipWS end", state.currentIndex);
 }
 
+// operator
+
+fn isOperator(state: *ParseState) bool {
+    return (state.currentChar == '+') or (state.currentChar == '-');
+}
+
+fn parseOperator(str: []const u8, state: *ParseState) anyerror!Op {
+    if (state.currentChar == '+') {
+        if (hasNextChar(str, state)) {
+            nextChar(str, state);
+        }
+        return Op.plus;
+    } else if (state.currentChar == '-') {
+        if (hasNextChar(str, state)) {
+            nextChar(str, state);
+        }
+        return Op.minus;
+    } else {
+        return Error.parseError;
+    }
+}
+
+// int
+
 fn isInt(state: *ParseState) bool {
     return '0' <= state.currentChar and state.currentChar <= '9';
 }
@@ -59,19 +87,20 @@ fn parseInt(str: []const u8, state: *ParseState) i32 {
     return res;
 }
 
+// expr
+
 const Buffer = struct {
     items: []Expr,
     size: usize,
     capacity: usize,
 };
 
-const Error = error{parseError};
-
 fn parseExpression(str: []const u8, state: *ParseState) anyerror!Expr {
     skipWS(str, state);
     if (isInt(state)) {
-        const res = parseInt(str, state);
-        return Expr{ .int = res };
+        return Expr{ .int = parseInt(str, state) };
+    } else if (isOperator(state)) {
+        return Expr{ .op = try parseOperator(str, state) };
     } else if (state.currentChar == '(') {
         nextChar(str, state);
         var buf: Buffer = .{ .items = try allocator.alloc(Expr, 10), .size = 0, .capacity = 10 };
@@ -126,6 +155,12 @@ fn exprEqual(lhs: Expr, rhs: Expr) bool {
     return switch (lhs) {
         Tag.int => switch (rhs) {
             Tag.int => lhs.int == rhs.int,
+            Tag.op => false,
+            Tag.list => false,
+        },
+        Tag.op => switch (rhs) {
+            Tag.int => false,
+            Tag.op => lhs.op == rhs.op,
             Tag.list => false,
         },
         Tag.list => switch (rhs) {
@@ -140,6 +175,7 @@ fn exprEqual(lhs: Expr, rhs: Expr) bool {
                     return res;
                 }
             },
+            Tag.op => false,
             Tag.int => false,
         },
     };
@@ -149,11 +185,24 @@ test "int test" {
     try std.testing.expectEqual(Expr{ .int = 123 }, try parse("123"));
 }
 
-test "expr test" {
-    try std.testing.expect(exprEqual(.{ .list = &.{.{ .int = 123 }} }, try parse("(123)")));
-    try std.testing.expect(exprEqual(.{ .int = 123 }, try parse("123")));
-    try std.testing.expect(exprEqual(Expr{ .list = &.{Expr{ .int = 123 }} }, try parse("(123)")));
-    try std.testing.expect(exprEqual(Expr{ .list = &.{ .{ .int = 1 }, .{ .int = 2 }, .{ .int = 3 } } }, try parse("(1 2 3)")));
-    try std.testing.expect(exprEqual(Expr{ .list = &.{ Expr{ .int = 1 }, Expr{ .list = &.{ .{ .int = 2 }, Expr{ .list = &.{Expr{ .int = 3 }} } } } } }, try parse("(1(2(3)))")));
-    try std.testing.expect(exprEqual(Expr{ .list = &.{Expr{ .list = &.{ .{ .int = 12 }, .{ .int = 3 } } }} }, try parse("( (12 3) )")));
+test "op test" {
+    try std.testing.expectEqual(Expr{ .op = Op.plus }, try parse("+"));
+    try std.testing.expectEqual(Expr{ .op = Op.minus }, try parse("-"));
+}
+
+fn expectExprEqual(lhs: Expr, rhs: Expr) !void {
+    try std.testing.expect(exprEqual(lhs, rhs));
+}
+
+test "int expr test" {
+    try expectExprEqual(.{ .list = &.{.{ .int = 123 }} }, try parse("(123)"));
+    try expectExprEqual(.{ .int = 123 }, try parse("123"));
+    try expectExprEqual(.{ .list = &.{Expr{ .int = 123 }} }, try parse("(123)"));
+    try expectExprEqual(.{ .list = &.{ .{ .int = 1 }, .{ .int = 2 }, .{ .int = 3 } } }, try parse("(1 2 3)"));
+    try expectExprEqual(.{ .list = &.{ Expr{ .int = 1 }, Expr{ .list = &.{ .{ .int = 2 }, Expr{ .list = &.{Expr{ .int = 3 }} } } } } }, try parse("(1(2(3)))"));
+    try expectExprEqual(.{ .list = &.{Expr{ .list = &.{ .{ .int = 12 }, .{ .int = 3 } } }} }, try parse("( (12 3) )"));
+}
+
+test "math expr test" {
+    try expectExprEqual(.{ .list = &.{ .{ .op = Op.plus }, .{ .int = 1 }, .{ .int = 2 }, .{ .int = 3 } } }, try parse("(+ 1 2 3)"));
 }
