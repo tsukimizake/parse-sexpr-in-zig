@@ -16,7 +16,6 @@ const ParseState = struct {
 
 fn initState(str: []const u8) anyerror!*ParseState {
     var state = try allocator.create(ParseState);
-    defer allocator.destroy(state);
     state.currentIndex = 0;
     state.currentChar = str[0];
     return state;
@@ -103,7 +102,9 @@ fn debug(str: []const u8, x: anytype) void {
 }
 
 fn parse(str: []const u8) anyerror!Expr {
-    return try parseExpression(str, try initState(str));
+    var state = try initState(str);
+    defer allocator.destroy(state);
+    return try parseExpression(str, state);
 }
 
 fn hoge(_: []u8) void {}
