@@ -1,8 +1,8 @@
 const std = @import("std");
 
 const allocator = std.heap.c_allocator;
-const Tag = enum { list, int };
 
+const Tag = enum { list, int };
 const Expr =
     union(Tag) {
     list: []const Expr,
@@ -14,8 +14,12 @@ const ParseState = struct {
     currentChar: u8,
 };
 
-fn initState(str: []const u8) *ParseState {
-    return &ParseState{ .currentIndex = 0, .currentChar = str[0] };
+fn initState(str: []const u8) anyerror!*ParseState {
+    var state = try allocator.create(ParseState);
+    defer allocator.destroy(state);
+    state.currentIndex = 0;
+    state.currentChar = str[0];
+    return state;
 }
 
 fn hasNextChar(str: []const u8, state: *ParseState) bool {
@@ -99,7 +103,7 @@ fn debug(str: []const u8, x: anytype) void {
 }
 
 fn parse(str: []const u8) anyerror!Expr {
-    return try parseExpression(str, initState(str));
+    return try parseExpression(str, try initState(str));
 }
 
 fn hoge(_: []u8) void {}
